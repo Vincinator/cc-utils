@@ -485,21 +485,16 @@ def create_upgrade_pullrequests(
                 raise ValueError(f'unknown {upstream_update_policy=}')
 
             if current_version_constraint is VersionConstraint.SAME_MAJOR:
-                cref_versions = version_lookup(cref.componentName)
+                cref_major = version.parse_to_semver(cref.version).major
                 constrained_candidates = []
                 for candidate in candidates:
-                    constrained = version.greatest_version_with_matching_major(
-                        reference_version=cref.version,
-                        versions=cref_versions,
-                        ignore_prerelease_versions=ignore_prerelease_versions,
-                    )
-                    if constrained is None:
+                    if version.parse_to_semver(candidate).major != cref_major:
                         logger.info(
-                            f'no same-major version available for {cref.componentName} '
-                            f'(reference={cref.version}, candidate={candidate}) - skipping'
+                            f'skip (same-major constraint): {cref.componentName} '
+                            f'reference={cref.version} candidate={candidate}'
                         )
                         continue
-                    constrained_candidates.append(constrained)
+                    constrained_candidates.append(candidate)
                 candidates = tuple(constrained_candidates)
 
             for target in candidates:
@@ -530,14 +525,22 @@ def create_upgrade_pullrequests(
                 )
         else:
             if current_version_constraint is VersionConstraint.SAME_MAJOR:
-                target = version.greatest_version_with_matching_major(
-                    reference_version=cref.version,
-                    versions=version_lookup(cref.componentName),
+                cref_major = version.parse_to_semver(cref.version).major
+                same_major_versions = [
+                    v for v in version_lookup(cref.componentName)
+                    if (
+                        (parsed := version.parse_to_semver(v, invalid_semver_ok=True))
+                        is not None
+                        and parsed.major == cref_major
+                    )
+                ]
+                target = version.greatest_version(
+                    versions=same_major_versions,
                     ignore_prerelease_versions=ignore_prerelease_versions,
+                    invalid_semver_ok=True,
+                    min_version=cref.version,
                 )
-                if not target or version.parse_to_semver(target) == version.parse_to_semver(
-                    cref.version
-                ):
+                if not target:
                     logger.info(
                         f'no same-major upgrade available for {cref.componentName} '
                         f'(reference={cref.version})'

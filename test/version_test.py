@@ -236,8 +236,8 @@ def test_greatest_version_with_matching_major():
         '1.0.0', versions_only_pre, ignore_prerelease_versions=False,
     ) == '1.1.0-rc.1'
 
-    # reference equal to greatest → returns the greatest (>= reference)
-    assert version.greatest_version_with_matching_major('1.10.0', versions) == '1.10.0'
+    # reference equal to greatest → returns None (strict greater-than)
+    assert version.greatest_version_with_matching_major('1.10.0', versions) is None
 
 
 def test_iter_upgrade_path():
