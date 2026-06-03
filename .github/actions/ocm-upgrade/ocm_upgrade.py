@@ -43,11 +43,6 @@ class UpstreamUpdatePolicy(enum.StrEnum):
     ACCEPT_HOTFIXES = 'accept-hotfixes'
 
 
-class VersionConstraint(enum.StrEnum):
-    NONE = 'none'
-    SAME_MAJOR = 'same-major'
-
-
 class MergePolicy(enum.StrEnum):
     AUTOMERGE = 'automerge'
     MANUAL = 'manual'
@@ -73,33 +68,6 @@ class MergePolicyConfig:
     def from_dict(raw: dict) -> typing.Self:
         return dacite.from_dict(
             data_class=MergePolicyConfig,
-            data=raw,
-            config=dacite.Config(
-                cast=[enum.Enum],
-                convert_key=lambda key: key.replace('_', '-'),
-            ),
-        )
-
-    def matches(self, component_name: str) -> bool:
-        for component in self.components:
-            if re.fullmatch(component, component_name):
-                return True
-        return False
-
-
-@dataclasses.dataclass
-class VersionConstraintConfig:
-    constraint: VersionConstraint
-    components: list[str] | str
-
-    def __post_init__(self):
-        if isinstance(self.components, str):
-            self.components = [self.components]
-
-    @staticmethod
-    def from_dict(raw: dict) -> typing.Self:
-        return dacite.from_dict(
-            data_class=VersionConstraintConfig,
             data=raw,
             config=dacite.Config(
                 cast=[enum.Enum],
@@ -404,6 +372,25 @@ def upgrade_pullrequest_exists(
     return False
 
 
+def _multi_major_component_names(
+    references: collections.abc.Iterable[ocm.ComponentReference],
+) -> set[str]:
+    '''
+    Returns componentNames that appear in `references` with more than one distinct major
+    version. Such components are tracked per-major: each reference receives same-major
+    upgrades only, so multiple major lanes (e.g. gardenlinux 1877.x and 2150.x) are
+    upgraded independently.
+    '''
+    majors_by_component: dict[str, set[int]] = collections.defaultdict(set)
+    for reference in references:
+        majors_by_component[reference.componentName].add(
+            version.parse_to_semver(reference.version).major
+        )
+    return {
+        name for name, majors in majors_by_component.items() if len(majors) > 1
+    }
+
+
 def create_upgrade_pullrequests(
     component: ocm.Component,
     component_descriptor_lookup: ocm.ComponentDescriptorLookup,
@@ -421,10 +408,13 @@ def create_upgrade_pullrequests(
     upstream_component_name: str | None=None,
     upstream_update_policy: UpstreamUpdatePolicy = UpstreamUpdatePolicy.STRICTLY_FOLLOW,
     ignore_prerelease_versions: bool=True,
-    version_constraint_configs: list[VersionConstraintConfig] | None=None,
 ) -> collections.abc.Iterable[github.pullrequest.UpgradePullRequest]:
+    all_references = list(ocm.gardener.iter_component_references(component=component))
+
+    multi_major_components = _multi_major_component_names(all_references)
+
     for cref in ocm.gardener.iter_greatest_component_references(
-        references=ocm.gardener.iter_component_references(component=component),
+        references=all_references,
     ):
         logger.info(f'processing {cref=}')
         upgrade_vectors: list[ocm.gardener.UpgradeVector] = []
@@ -438,11 +428,7 @@ def create_upgrade_pullrequests(
             current_merge_policy = merge_policy
             current_merge_method = merge_method
 
-        current_version_constraint = VersionConstraint.NONE
-        for version_constraint_config in (version_constraint_configs or ()):
-            if version_constraint_config.matches(cref.componentName):
-                current_version_constraint = version_constraint_config.constraint
-                break
+        same_major_only = cref.componentName in multi_major_components
 
         if upstream_component_name:
             upstream_version = version.greatest_version(
@@ -484,7 +470,7 @@ def create_upgrade_pullrequests(
             else:
                 raise ValueError(f'unknown {upstream_update_policy=}')
 
-            if current_version_constraint is VersionConstraint.SAME_MAJOR:
+            if same_major_only:
                 cref_major = version.parse_to_semver(cref.version).major
                 constrained_candidates = []
                 for candidate in candidates:
@@ -524,7 +510,7 @@ def create_upgrade_pullrequests(
                     )
                 )
         else:
-            if current_version_constraint is VersionConstraint.SAME_MAJOR:
+            if same_major_only:
                 cref_major = version.parse_to_semver(cref.version).major
                 same_major_versions = [
                     v for v in version_lookup(cref.componentName)

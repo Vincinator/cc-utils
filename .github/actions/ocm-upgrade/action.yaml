@@ -98,24 +98,6 @@ inputs:
       - component-name
       - reference-name
     default: component-name
-  version-constraints:
-    required: false
-    type: string
-    default: ""
-    description: |
-      A YAML-formatted string defining per-component version constraints. Components which are
-      not contained in the list are upgraded without any additional version constraint.
-
-      Supported constraints:
-        - same-major: only propose upgrades that keep the component reference's major version.
-        - none: no constraint (default for unmatched components).
-
-      Example:
-      ```
-      - components:
-          - acme.org/my-component
-        constraint: same-major
-      ```
 
 runs:
   using: composite
@@ -205,14 +187,6 @@ runs:
           for merge_policy_config_raw in merge_policy_configs_raw
         ]
 
-        version_constraint_configs_raw = yaml.safe_load('''\
-        ${{ inputs.version-constraints }}
-        ''') or []
-        version_constraint_configs = [
-          ocm_upgrade.VersionConstraintConfig.from_dict(version_constraint_config_raw)
-          for version_constraint_config_raw in version_constraint_configs_raw
-        ]
-
         with open('/tmp/github-token') as f:
           github_token = f.read().strip()
 
@@ -256,7 +230,6 @@ runs:
             upstream_update_policy=upstream_update_policy,
             ignore_prerelease_versions=True,
             pr_naming_pattern='${{ inputs.pr-naming-pattern }}',
-            version_constraint_configs=version_constraint_configs,
           )
         )
 

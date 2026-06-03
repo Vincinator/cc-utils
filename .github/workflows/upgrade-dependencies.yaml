@@ -99,24 +99,6 @@ on:
         type: string
         description: strictly-follow | accept-hotfixes
         default: strictly-follow
-      version-constraints:
-        required: false
-        type: string
-        default: ""
-        description: |
-          A YAML-formatted string defining per-component version constraints. Components which are
-          not contained in the list are upgraded without any additional version constraint.
-
-          Supported constraints:
-            - same-major: only propose upgrades that keep the component reference's major version.
-            - none: no constraint (default for unmatched components).
-
-          Example:
-          ```
-          - components:
-              - acme.org/my-component
-            constraint: same-major
-          ```
       github-environment:
         required: false
         default: ""
@@ -179,4 +161,3 @@ jobs:
           pr-naming-pattern: ${{ inputs.pr-naming-pattern }}
           upstream-component-name: ${{ inputs.upstream-component-name }}
           upstream-update-policy: ${{ inputs.upstream-update-policy }}
-          version-constraints: ${{ inputs.version-constraints }}

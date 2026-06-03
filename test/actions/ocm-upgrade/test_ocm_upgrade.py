@@ -110,64 +110,27 @@ def test_upstream_no_matching_cref_returns_none():
     assert result is None
 
 
-def test_version_constraint_config_matches_literal_component_name():
-    cfg = ocm_upgrade.VersionConstraintConfig(
-        constraint=ocm_upgrade.VersionConstraint.SAME_MAJOR,
-        components=['example.com/foo'],
-    )
+def test_multi_major_component_names_detects_multiple_majors():
+    refs = [
+        _make_cref('gardenlinux-1877', 'example.com/gardenlinux', '1877.1.0'),
+        _make_cref('gardenlinux-2150', 'example.com/gardenlinux', '2150.1.0'),
+        _make_cref('foo', 'example.com/foo', '1.0.0'),
+    ]
 
-    assert cfg.matches('example.com/foo')
-    assert not cfg.matches('example.com/bar')
+    result = ocm_upgrade._multi_major_component_names(refs)
 
-
-def test_version_constraint_config_normalises_string_components():
-    # `components` may be a single string; __post_init__ wraps it into a list
-    cfg = ocm_upgrade.VersionConstraintConfig(
-        constraint=ocm_upgrade.VersionConstraint.SAME_MAJOR,
-        components='example.com/foo',
-    )
-
-    assert cfg.components == ['example.com/foo']
-    assert cfg.matches('example.com/foo')
+    assert result == {'example.com/gardenlinux'}
 
 
-def test_version_constraint_config_matches_regex_pattern():
-    # matcher uses re.fullmatch, so '.*' wildcards work and matching is anchored
-    cfg = ocm_upgrade.VersionConstraintConfig(
-        constraint=ocm_upgrade.VersionConstraint.SAME_MAJOR,
-        components=['example.com/.*'],
-    )
+def test_multi_major_component_names_single_major_excluded():
+    # multiple references on the same major do not count as multi-major
+    refs = [
+        _make_cref('foo-a', 'example.com/foo', '1.0.0'),
+        _make_cref('foo-b', 'example.com/foo', '1.2.0'),
+    ]
 
-    assert cfg.matches('example.com/foo')
-    assert cfg.matches('example.com/foo/bar')
-    # fullmatch: prefix-only matches do not satisfy the pattern
-    assert not cfg.matches('other.com/example.com/foo')
+    assert ocm_upgrade._multi_major_component_names(refs) == set()
 
 
-def test_version_constraint_config_from_dict():
-    cfg = ocm_upgrade.VersionConstraintConfig.from_dict({
-        'constraint': 'same-major',
-        'components': ['example.com/foo'],
-    })
-
-    assert cfg.constraint is ocm_upgrade.VersionConstraint.SAME_MAJOR
-    assert cfg.components == ['example.com/foo']
-
-
-def test_version_constraint_config_from_dict_underscore_keys():
-    # convert_key=lambda key: key.replace('_', '-') means snake_case keys are accepted
-    cfg = ocm_upgrade.VersionConstraintConfig.from_dict({
-        'constraint': 'none',
-        'components': 'example.com/foo',
-    })
-
-    assert cfg.constraint is ocm_upgrade.VersionConstraint.NONE
-    assert cfg.components == ['example.com/foo']
-
-
-def test_version_constraint_config_from_dict_rejects_unknown_constraint():
-    with pytest.raises(Exception):
-        ocm_upgrade.VersionConstraintConfig.from_dict({
-            'constraint': 'bogus',
-            'components': ['example.com/foo'],
-        })
+def test_multi_major_component_names_empty_input():
+    assert ocm_upgrade._multi_major_component_names([]) == set()
