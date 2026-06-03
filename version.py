@@ -470,6 +470,38 @@ def greatest_version_with_matching_minor(
     return latest_candidate
 
 
+def greatest_version_with_matching_major(
+    reference_version: T,
+    versions: Iterable[T],
+    ignore_prerelease_versions: bool=False,
+) -> T | None:
+    latest_candidate_semver = None
+    latest_candidate = None
+
+    if isinstance(reference_version, str):
+        reference_version = parse_to_semver(reference_version)
+
+    for candidate in versions:
+        if isinstance(candidate, str):
+            candidate_semver = parse_to_semver(candidate)
+        else:
+            candidate_semver = candidate
+
+        # skip if major version does not match
+        if candidate_semver.major != reference_version.major:
+            continue
+
+        if ignore_prerelease_versions and candidate_semver.prerelease:
+            continue
+
+        if candidate_semver >= reference_version:
+            if not latest_candidate_semver or latest_candidate_semver < candidate_semver:
+                latest_candidate_semver = candidate_semver
+                latest_candidate = candidate
+
+    return latest_candidate
+
+
 def find_smallest_version_with_matching_minor(
     reference_version: Union[semver.VersionInfo, str],
     versions: Iterable[Union[semver.VersionInfo, str]],

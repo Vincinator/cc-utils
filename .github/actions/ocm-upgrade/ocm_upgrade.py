@@ -43,6 +43,11 @@ class UpstreamUpdatePolicy(enum.StrEnum):
     ACCEPT_HOTFIXES = 'accept-hotfixes'
 
 
+class VersionConstraint(enum.StrEnum):
+    NONE = 'none'
+    SAME_MAJOR = 'same-major'
+
+
 class MergePolicy(enum.StrEnum):
     AUTOMERGE = 'automerge'
     MANUAL = 'manual'
@@ -68,6 +73,33 @@ class MergePolicyConfig:
     def from_dict(raw: dict) -> typing.Self:
         return dacite.from_dict(
             data_class=MergePolicyConfig,
+            data=raw,
+            config=dacite.Config(
+                cast=[enum.Enum],
+                convert_key=lambda key: key.replace('_', '-'),
+            ),
+        )
+
+    def matches(self, component_name: str) -> bool:
+        for component in self.components:
+            if re.fullmatch(component, component_name):
+                return True
+        return False
+
+
+@dataclasses.dataclass
+class VersionConstraintConfig:
+    constraint: VersionConstraint
+    components: list[str] | str
+
+    def __post_init__(self):
+        if isinstance(self.components, str):
+            self.components = [self.components]
+
+    @staticmethod
+    def from_dict(raw: dict) -> typing.Self:
+        return dacite.from_dict(
+            data_class=VersionConstraintConfig,
             data=raw,
             config=dacite.Config(
                 cast=[enum.Enum],
@@ -389,6 +421,7 @@ def create_upgrade_pullrequests(
     upstream_component_name: str | None=None,
     upstream_update_policy: UpstreamUpdatePolicy = UpstreamUpdatePolicy.STRICTLY_FOLLOW,
     ignore_prerelease_versions: bool=True,
+    version_constraint_configs: list[VersionConstraintConfig] | None=None,
 ) -> collections.abc.Iterable[github.pullrequest.UpgradePullRequest]:
     for cref in ocm.gardener.iter_greatest_component_references(
         references=ocm.gardener.iter_component_references(component=component),
@@ -404,6 +437,12 @@ def create_upgrade_pullrequests(
         else:
             current_merge_policy = merge_policy
             current_merge_method = merge_method
+
+        current_version_constraint = VersionConstraint.NONE
+        for version_constraint_config in (version_constraint_configs or ()):
+            if version_constraint_config.matches(cref.componentName):
+                current_version_constraint = version_constraint_config.constraint
+                break
 
         if upstream_component_name:
             upstream_version = version.greatest_version(
@@ -445,6 +484,24 @@ def create_upgrade_pullrequests(
             else:
                 raise ValueError(f'unknown {upstream_update_policy=}')
 
+            if current_version_constraint is VersionConstraint.SAME_MAJOR:
+                cref_versions = version_lookup(cref.componentName)
+                constrained_candidates = []
+                for candidate in candidates:
+                    constrained = version.greatest_version_with_matching_major(
+                        reference_version=cref.version,
+                        versions=cref_versions,
+                        ignore_prerelease_versions=ignore_prerelease_versions,
+                    )
+                    if constrained is None:
+                        logger.info(
+                            f'no same-major version available for {cref.componentName} '
+                            f'(reference={cref.version}, candidate={candidate}) - skipping'
+                        )
+                        continue
+                    constrained_candidates.append(constrained)
+                candidates = tuple(constrained_candidates)
+
             for target in candidates:
                 tv = version.parse_to_semver(target)
                 cv = version.parse_to_semver(cref.version)
@@ -472,12 +529,37 @@ def create_upgrade_pullrequests(
                     )
                 )
         else:
-            upgrade_vector = ocm.gardener.find_upgrade_vector(
-                component_id=cref.component_id,
-                version_lookup=version_lookup,
-                ignore_prerelease_versions=ignore_prerelease_versions,
-                ignore_invalid_semver_versions=True,
-            )
+            if current_version_constraint is VersionConstraint.SAME_MAJOR:
+                target = version.greatest_version_with_matching_major(
+                    reference_version=cref.version,
+                    versions=version_lookup(cref.componentName),
+                    ignore_prerelease_versions=ignore_prerelease_versions,
+                )
+                if not target or version.parse_to_semver(target) == version.parse_to_semver(
+                    cref.version
+                ):
+                    logger.info(
+                        f'no same-major upgrade available for {cref.componentName} '
+                        f'(reference={cref.version})'
+                    )
+                    continue
+                upgrade_vector = ocm.gardener.UpgradeVector(
+                    whence=ocm.ComponentIdentity(
+                        name=cref.componentName,
+                        version=cref.version,
+                    ),
+                    whither=ocm.ComponentIdentity(
+                        name=cref.componentName,
+                        version=target,
+                    ),
+                )
+            else:
+                upgrade_vector = ocm.gardener.find_upgrade_vector(
+                    component_id=cref.component_id,
+                    version_lookup=version_lookup,
+                    ignore_prerelease_versions=ignore_prerelease_versions,
+                    ignore_invalid_semver_versions=True,
+                )
 
             if not upgrade_vector:
                 logger.info(f'did not find an upgrade-proposal for {cref=}')

@@ -201,6 +201,45 @@ def test_smallest_versions():
     assert set(version.smallest_versions({'1.2.3', '2.3.4', '3.0'}, keep=1)) == {'1.2.3', '2.3.4'}
 
 
+def test_greatest_version_with_matching_major():
+    versions = (
+        '1.0.0',
+        '1.2.3',
+        '1.5.7',
+        '1.10.0',
+        '2.0.0',
+        '2.1.0',
+        '3.0.0-rc.1',
+        '3.0.0',
+    )
+
+    # greatest within same major
+    assert version.greatest_version_with_matching_major('1.2.3', versions) == '1.10.0'
+    assert version.greatest_version_with_matching_major('2.0.0', versions) == '2.1.0'
+
+    # cross-major rejection: reference 1.x must not select 2.x or 3.x
+    result = version.greatest_version_with_matching_major('1.0.0', versions)
+    assert result is not None
+    assert version.parse_to_semver(result).major == 1
+
+    # no matching-major version → None
+    assert version.greatest_version_with_matching_major('9.0.0', versions) is None
+
+    # prerelease handling: ignored when ignore_prerelease_versions=True
+    versions_with_pre = ('1.0.0', '1.1.0-rc.1', '1.2.0')
+    assert version.greatest_version_with_matching_major(
+        '1.0.0', versions_with_pre, ignore_prerelease_versions=True,
+    ) == '1.2.0'
+    # prerelease included when ignore_prerelease_versions=False
+    versions_only_pre = ('1.0.0', '1.1.0-rc.1')
+    assert version.greatest_version_with_matching_major(
+        '1.0.0', versions_only_pre, ignore_prerelease_versions=False,
+    ) == '1.1.0-rc.1'
+
+    # reference equal to greatest → returns the greatest (>= reference)
+    assert version.greatest_version_with_matching_major('1.10.0', versions) == '1.10.0'
+
+
 def test_iter_upgrade_path():
     versions = (
         '0.1.0',
