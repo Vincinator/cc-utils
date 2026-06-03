@@ -2,8 +2,26 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
+import os
+import sys
+
+import pytest
+
+# add the action directory so ocm_upgrade is importable
+sys.path.insert(
+    0,
+    os.path.abspath(
+        os.path.join(
+            os.path.dirname(__file__), '..', '..', '..', '.github', 'actions',
+            'ocm-upgrade',
+        )
+    ),
+)
+
 import ocm
 import ocm.gardener
+
+import ocm_upgrade
 
 
 def test_find_upgrade_vector_newer_available():
@@ -90,3 +108,66 @@ def test_upstream_no_matching_cref_returns_none():
     )
 
     assert result is None
+
+
+def test_version_constraint_config_matches_literal_component_name():
+    cfg = ocm_upgrade.VersionConstraintConfig(
+        constraint=ocm_upgrade.VersionConstraint.SAME_MAJOR,
+        components=['example.com/foo'],
+    )
+
+    assert cfg.matches('example.com/foo')
+    assert not cfg.matches('example.com/bar')
+
+
+def test_version_constraint_config_normalises_string_components():
+    # `components` may be a single string; __post_init__ wraps it into a list
+    cfg = ocm_upgrade.VersionConstraintConfig(
+        constraint=ocm_upgrade.VersionConstraint.SAME_MAJOR,
+        components='example.com/foo',
+    )
+
+    assert cfg.components == ['example.com/foo']
+    assert cfg.matches('example.com/foo')
+
+
+def test_version_constraint_config_matches_regex_pattern():
+    # matcher uses re.fullmatch, so '.*' wildcards work and matching is anchored
+    cfg = ocm_upgrade.VersionConstraintConfig(
+        constraint=ocm_upgrade.VersionConstraint.SAME_MAJOR,
+        components=['example.com/.*'],
+    )
+
+    assert cfg.matches('example.com/foo')
+    assert cfg.matches('example.com/foo/bar')
+    # fullmatch: prefix-only matches do not satisfy the pattern
+    assert not cfg.matches('other.com/example.com/foo')
+
+
+def test_version_constraint_config_from_dict():
+    cfg = ocm_upgrade.VersionConstraintConfig.from_dict({
+        'constraint': 'same-major',
+        'components': ['example.com/foo'],
+    })
+
+    assert cfg.constraint is ocm_upgrade.VersionConstraint.SAME_MAJOR
+    assert cfg.components == ['example.com/foo']
+
+
+def test_version_constraint_config_from_dict_underscore_keys():
+    # convert_key=lambda key: key.replace('_', '-') means snake_case keys are accepted
+    cfg = ocm_upgrade.VersionConstraintConfig.from_dict({
+        'constraint': 'none',
+        'components': 'example.com/foo',
+    })
+
+    assert cfg.constraint is ocm_upgrade.VersionConstraint.NONE
+    assert cfg.components == ['example.com/foo']
+
+
+def test_version_constraint_config_from_dict_rejects_unknown_constraint():
+    with pytest.raises(Exception):
+        ocm_upgrade.VersionConstraintConfig.from_dict({
+            'constraint': 'bogus',
+            'components': ['example.com/foo'],
+        })

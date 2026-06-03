@@ -240,6 +240,25 @@ def test_greatest_version_with_matching_major():
     assert version.greatest_version_with_matching_major('1.10.0', versions) is None
 
 
+def test_greatest_version_with_matching_major_semver_input():
+    # function supports semver.VersionInfo inputs (not just strings); verify both
+    # branches of the isinstance(...) check work.
+    versions = tuple(semver.VersionInfo.parse(v) for v in (
+        '1.0.0', '1.2.3', '2.0.0',
+    ))
+
+    result = version.greatest_version_with_matching_major(
+        semver.VersionInfo.parse('1.0.0'), versions,
+    )
+    assert isinstance(result, semver.VersionInfo)
+    assert str(result) == '1.2.3'
+
+    # mixed: str reference, semver candidates
+    result = version.greatest_version_with_matching_major('1.0.0', versions)
+    assert isinstance(result, semver.VersionInfo)
+    assert str(result) == '1.2.3'
+
+
 def test_iter_upgrade_path():
     versions = (
         '0.1.0',
