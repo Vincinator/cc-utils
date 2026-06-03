@@ -229,7 +229,7 @@ runs:
             upstream_component_name=upstream_component,
             upstream_update_policy=upstream_update_policy,
             ignore_prerelease_versions=True,
-            pr_naming_pattern='${{ inputs.pr-naming-pattern }}',
+            pr_naming_pattern='${{ inputs.pr-naming-pattern }}'
           )
         )
 
