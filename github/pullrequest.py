@@ -233,7 +233,7 @@ def iter_obsolete_upgrade_pull_requests(
         '''
 
         key = upgrade_pull_request.component_name
-        if pr_naming_pattern == 'component-reference-name':
+        if pr_naming_pattern == 'reference-name':
             key += f':{upgrade_pull_request.component_reference_name}'
 
         if not keep_hotfix_versions:
